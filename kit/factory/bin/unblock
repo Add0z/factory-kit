@@ -1,0 +1,120 @@
+#!/usr/bin/env python3
+"""Release factory:blocked issues into the factory queue once their blockers are done.
+
+Usage:
+  unblock             promote every ready issue; print one line per blocked issue
+  unblock --dry-run   print what it would do, change nothing
+
+An open issue labeled `labels.blocked` in config.json (default `factory:blocked`)
+waits for its blockers: GitHub's native "blocked by" dependencies, plus every
+`#<n>` listed on a "Blocked by" line or under a "Blocked by" heading in its body.
+When every blocker is closed as completed (a merged PR with "Closes #n" does
+that), the label is swapped for `labels.queue` (`factory`), so the next
+`job queue` picks it up. An issue can wait on any number of blockers.
+
+It never promotes on doubt: a blocker closed as not planned or as a duplicate,
+or a blocked issue with no blocker found, stays blocked and is reported for a
+human to decide. Runs from `/factory run` and from the factory-unblock GitHub
+workflow. Needs `gh`, authenticated, run inside the repo.
+"""
+
+import json
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+CONFIG = json.loads((Path(__file__).resolve().parents[1] / "config.json").read_text())
+QUEUE = CONFIG["labels"]["queue"]
+BLOCKED = CONFIG["labels"].get("blocked", "factory:blocked")
+
+HEADING = re.compile(r"^\s*#{1,6}\s*blocked by\b", re.I)
+INLINE = re.compile(r"^\s*[*_]*blocked by[*_]*\s*:?[*_]*\s*:?(.*)$", re.I)
+ANY_HEADING = re.compile(r"^\s*#{1,6}\s")
+REF = re.compile(r"(?<![\w/])#(\d+)\b")
+
+
+def gh(*args):
+    res = subprocess.run(["gh", *args], capture_output=True, text=True)
+    if res.returncode != 0:
+        raise RuntimeError(f"`gh {' '.join(args)}` failed: {res.stderr.strip()}")
+    return res.stdout
+
+
+def body_blockers(body):
+    """Issue numbers named on a 'Blocked by' line or under a 'Blocked by' heading."""
+    found, in_section = set(), False
+    for line in (body or "").splitlines():
+        if HEADING.match(line):
+            in_section = True
+            continue
+        if in_section and ANY_HEADING.match(line):
+            in_section = False
+        m = INLINE.match(line)
+        if m:
+            found.update(int(n) for n in REF.findall(m.group(1)))
+        elif in_section:
+            found.update(int(n) for n in REF.findall(line))
+    return found
+
+
+def native_blockers(repo, number):
+    """{number: (state, state_reason)} from GitHub's issue dependencies, or {} if unavailable."""
+    try:
+        out = gh("api", "--paginate", "--slurp", f"repos/{repo}/issues/{number}/dependencies/blocked_by")
+    except RuntimeError as e:
+        if "404" in str(e) or "Not Found" in str(e):
+            return {}
+        raise
+    issues = [i for page in json.loads(out or "[]") for i in page]
+    return {i["number"]: (i["state"], i.get("state_reason")) for i in issues}
+
+
+def issue_state(repo, number):
+    i = json.loads(gh("api", f"repos/{repo}/issues/{number}"))
+    return i["state"], i.get("state_reason")
+
+
+def main(argv):
+    if argv not in ([], ["--dry-run"]):
+        sys.exit(__doc__.strip())
+    dry = argv == ["--dry-run"]
+    repo = json.loads(gh("repo", "view", "--json", "nameWithOwner"))["nameWithOwner"]
+    blocked = json.loads(gh("issue", "list", "--label", BLOCKED, "--state", "open",
+                            "--limit", "500", "--json", "number,title,body"))
+    if not blocked:
+        print(f"unblock: no open issues labeled {BLOCKED}")
+        return
+    for issue in sorted(blocked, key=lambda i: i["number"]):
+        n = issue["number"]
+        blockers = native_blockers(repo, n)
+        for b in body_blockers(issue["body"]) - set(blockers) - {n}:
+            blockers[b] = issue_state(repo, b)
+        if not blockers:
+            print(f"#{n} stays blocked: no blocker found (add a 'blocked by' dependency, "
+                  f"or swap {BLOCKED} for {QUEUE} by hand)")
+            continue
+        refs = ", ".join(f"#{b}" for b in sorted(blockers))
+        waiting = [f"#{b}" for b, (state, _) in sorted(blockers.items()) if state != "closed"]
+        dropped = [f"#{b} ({reason})" for b, (state, reason) in sorted(blockers.items())
+                   if state == "closed" and reason != "completed"]
+        if waiting:
+            print(f"#{n} stays blocked: waiting on {', '.join(waiting)}")
+        elif dropped:
+            print(f"#{n} stays blocked: {', '.join(dropped)} closed without being done; "
+                  f"a human decides whether #{n} still makes sense")
+        elif dry:
+            print(f"#{n} would be queued: {refs} done")
+        else:
+            gh("issue", "edit", str(n), "--remove-label", BLOCKED, "--add-label", QUEUE)
+            gh("issue", "comment", str(n), "--body",
+               f"Unblocked: {refs} {'is' if len(blockers) == 1 else 'are'} done. "
+               f"Queued for the software factory (`{QUEUE}`).")
+            print(f"#{n} queued: {refs} done")
+
+
+if __name__ == "__main__":
+    try:
+        main(sys.argv[1:])
+    except RuntimeError as e:
+        sys.exit(f"unblock: {e}")

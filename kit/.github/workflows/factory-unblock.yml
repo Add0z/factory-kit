@@ -1,0 +1,28 @@
+# Queue `factory:blocked` issues for the software factory once all their
+# blockers are done. Runs when any issue closes (a merged "Closes #n" PR closes
+# its issue), so dependents are released even when a human merges a PR on
+# GitHub. The script: factory/bin/unblock.
+name: factory-unblock
+
+on:
+  issues:
+    types: [closed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: factory-unblock
+  cancel-in-progress: false
+
+jobs:
+  unblock:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Release unblocked issues
+        run: python3 factory/bin/unblock
+        env:
+          GH_TOKEN: ${{ github.token }}
