@@ -7,6 +7,8 @@ spots, the users) with the real ones.
 
 ## 1. `factory/checks.sh`
 
+Fix the comment's toolchain version and container list for the project.
+
 ```bash
 #!/usr/bin/env bash
 # The repo's checks. Exit 0 only when the branch is fit to review.
@@ -15,11 +17,11 @@ spots, the users) with the real ones.
 # the working directory. Keep it fast, deterministic and non-interactive: no
 # watch modes, no prompts, nothing that rewrites files.
 #
-# Spring Boot / Gradle project (Java 27 toolchain). `build` runs `check`:
+# Spring Boot / Gradle project (Java <n> toolchain). `build` runs `check`:
 #   spotlessCheck   formatting (google-java-format, AOSP style)
 #   compileJava     javac -Xlint:all -Werror plus Error Prone
 #   test            JUnit, ArchUnit rules, Flyway migrations on Testcontainers
-#                   (Postgres + Redis, so Docker must be running)
+#                   (<the project's containers>, so Docker must be running)
 #   jacoco          coverage report in build/reports/jacoco
 # and then assembles the jar.
 set -euo pipefail
@@ -44,7 +46,8 @@ Plugins:
     id 'jacoco'
 ```
 
-Dependencies (Flyway only for JPA on Postgres):
+Dependencies (Flyway only for JPA on Postgres; on Boot 3 use
+`org.flywaydb:flyway-core` instead of the Boot 4 starter):
 
 ```groovy
     implementation 'org.springframework.boot:spring-boot-starter-flyway'
@@ -84,20 +87,24 @@ jacocoTestReport {
     }
 }
 
-tasks.named('asciidoctor') {
-    inputs.dir snippetsDir
-    dependsOn test
-}
 ```
 
 - **palantir-java-format breaks on JDK 27** (`NoSuchFieldError ... endPositions`);
   google-java-format 2.0.0 (AOSP, 4 spaces) works.
 - `-processing` in `-Xlint` avoids a Lombok false positive.
-- Run `./gradlew spotlessApply` once so the repo starts formatted, then prove
-  each gate with a deliberately bad file (bad formatting, `a == "x"` on
-  Strings, an `@Autowired` field) and delete it.
+- `spotlessApply` reformats existing sources: it is part of the change the user
+  approves in INSTALL.md step 2. Run it once so the repo starts formatted.
+- Prove each gate with a deliberately bad file, then delete it. Bad formatting
+  fails `spotlessJavaCheck`; `a == "x"` on Strings fails `compileJava`
+  (Error Prone `ReferenceEquality`, fatal by `-Werror`); an `@Autowired` field
+  compiles and fails only `ArchitectureTest` (so run `test`, not `-x test`).
+- Versions known to work with JDK 27, Gradle 9.9 and Boot 4.1: the ones above.
+  On another JDK, run `./gradlew build` after adding them; a failure inside
+  the formatter or Error Prone means a version bump.
 
 ## 3. `src/main/resources/application.yaml` (JPA projects)
+
+Merge under the existing `spring:` key; don't append a second one.
 
 ```yaml
 spring:
@@ -179,6 +186,10 @@ class ArchitectureTest {
 - Backend without screens: `"surface_reviewers": {"ui": {"ux": "sonnet"}, "security": {"security": "opus"}}`.
 
 ## 6. Agent text (replaces the kit's `ADAPT` comments)
+
+Each block below replaces the ADAPT comment. Where a block starts with the
+line just above the comment (reviewer-ux, reviewer-ui), it replaces that line
+too.
 
 **`reviewer-code.md`**, in place of the ADAPT comment in "What to look for":
 
@@ -286,6 +297,11 @@ sessions, JobRunr background jobs and Spring AI (Anthropic) features.
 - **Dev server**: `./gradlew bootTestRun --args='--server.port=<port> --spring.grpc.server.port=0'`
   (Testcontainers gives each job its own database; the fixed gRPC port 9090
   would collide between parallel jobs).
+- **Metrics registries**: a Spring Initializr project with
+  `micrometer-registry-datadog` or `-dynatrace` and no API key won't start
+  (`apiKey was 'null' but it is required`). Remove the unused registries, or
+  add `--management.<datadog|dynatrace>.metrics.export.enabled=false` to the
+  dev-server `--args` **[USER decides]**.
 - **Single test**: `./gradlew test --tests '<Class>'`. **Formatter**:
   `./gradlew spotlessApply`.
 - **Conventions**: controller → service → repository; DTOs/records out of
@@ -293,7 +309,20 @@ sessions, JobRunr background jobs and Spring AI (Anthropic) features.
   with scale and currency for money; `ProblemDetail` from one
   `@ControllerAdvice`; test slices first.
 
-## 8. jdtls (Java LSP)
+## 8. Known Initializr problems
+
+- **Spring AI Redis chat memory**: `spring-ai-starter-model-chat-memory-repository-redis`
+  (Jedis) connects to `localhost:6379` and ignores Testcontainers'
+  `@ServiceConnection`, so `contextLoads()` fails. Initializr also generates
+  two `@ServiceConnection(name = "redis")` beans (`redis` and `redis-stack`).
+  Unless the project uses chat memory now, remove the starter and the
+  `redisStackContainer` bean **[USER decides]**.
+
+## 9. `.mcp.json`
+
+Add `"--exclude", "build", "--exclude", ".gradle"` to CodeGraph's `args`.
+
+## 10. jdtls (Java LSP)
 
 ```bash
 brew install jdtls

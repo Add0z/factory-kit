@@ -25,7 +25,7 @@ intake → spec → build → gate → review → approve, with the tooling arou
 Open Claude Code in the root of your project and say:
 
 ```
-Read https://raw.githubusercontent.com/Add0z/factory-kit/v1.0.0/INSTALL.md and follow it.
+Read https://raw.githubusercontent.com/Add0z/factory-kit/v1.0.1/INSTALL.md and follow it.
 ```
 
 Requirements: a GitHub repo, `gh` logged in, Claude Code 2.1.290+, Python

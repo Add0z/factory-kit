@@ -7,10 +7,11 @@ report. Work in the project's root. Don't clone this repository.
 Files come from this kit at a fixed tag:
 
 ```
-KIT=https://raw.githubusercontent.com/Add0z/factory-kit/v1.0.0
+KIT=https://raw.githubusercontent.com/Add0z/factory-kit/v1.0.1
 ```
 
-Ask the user before anything marked **[USER]**, before pushing, and before
+Run every command from the project root; snippets that need another
+directory use a subshell `( cd ... )` so they come back. Ask the user before anything marked **[USER]**, before pushing, and before
 changing the project's own code (as opposed to the factory's files). Reply in
 the user's language.
 
@@ -34,44 +35,34 @@ Stop and tell the user if any of these fail:
   `gh repo edit --default-branch <current branch>`.
 - `claude --version` is 2.1.290 or later; `python3 --version` 3.10 or later;
   `node --version` 20 or later.
-- None of the files in step 1 already exist. If one does, show the user the
-  clash and ask before overwriting.
+- None of the files in step 1 exists, nor `.mcp.json`, `.wiki/` or
+  `.claude/skills/wiki-*`. If one does, show the user the clash and ask before
+  overwriting. `.claude/settings.json` and `AGENTS.md`/`CLAUDE.md` may exist:
+  later steps merge into them.
+- **Baseline**: run the project's own build/test command once and record the
+  result. If it already fails, tell the user what fails before going on, so
+  kit problems and project problems stay apart (the stack file lists known
+  ones).
 
 ## 1. Copy
 
-Copy each file from `$KIT/kit/<path>` to `<path>` in the project, unchanged:
-
-```
-.claude/skills/factory/SKILL.md
-.claude/agents/intake.md
-.claude/agents/spec-writer.md
-.claude/agents/builder.md
-.claude/agents/reviewer-code.md
-.claude/agents/reviewer-security.md
-.claude/agents/reviewer-ux.md
-.claude/agents/reviewer-ui.md
-.claude/agents/approver.md
-factory/config.json
-factory/checks.sh
-factory/bin/job
-factory/bin/gate
-factory/bin/route
-factory/bin/unblock
-factory/dashboard.html
-.github/workflows/factory-unblock.yml
-docs/agents/issue-tracker.md
-docs/agents/triage-labels.md
-docs/agents/domain.md
-docs/adr/0001-codegraph-graph-only.md
-factory-docs/01-workflow.md
-```
+Copy these files from `$KIT/kit/` into the project, unchanged:
 
 ```bash
-KIT=https://raw.githubusercontent.com/Add0z/factory-kit/v1.0.0
-for f in <the paths above>; do
-  mkdir -p "$(dirname "$f")" && curl -fsSL "$KIT/kit/$f" -o "$f"
+KIT=https://raw.githubusercontent.com/Add0z/factory-kit/v1.0.1
+for f in \
+  .claude/skills/factory/SKILL.md \
+  .claude/agents/intake.md .claude/agents/spec-writer.md .claude/agents/builder.md \
+  .claude/agents/reviewer-code.md .claude/agents/reviewer-security.md \
+  .claude/agents/reviewer-ux.md .claude/agents/reviewer-ui.md .claude/agents/approver.md \
+  factory/config.json factory/checks.sh factory/dashboard.html \
+  factory/bin/job factory/bin/gate factory/bin/route factory/bin/unblock \
+  .github/workflows/factory-unblock.yml \
+  docs/agents/issue-tracker.md docs/agents/triage-labels.md docs/agents/domain.md \
+  docs/adr/0001-codegraph-graph-only.md factory-docs/01-workflow.md; do
+  mkdir -p "$(dirname "$f")" && curl -fsSL "$KIT/kit/$f" -o "$f" || echo "FAILED: $f"
 done
-chmod +x factory/checks.sh factory/bin/job factory/bin/gate factory/bin/route factory/bin/unblock
+chmod +x factory/checks.sh factory/bin/*
 ```
 
 If the project already has a `docs/adr/0001-*`, renumber the kit's ADR to the
@@ -83,7 +74,10 @@ Find the project's stack and commands in `AGENTS.md`, `CLAUDE.md`,
 `package.json`, `Makefile`, `pyproject.toml`, `build.gradle`/`pom.xml` and CI
 config. **If a file in `$KIT/stacks/` matches the stack (for example
 `stacks/java-spring.md`), read it now and apply it in this step**; it has
-exact text for everything below.
+exact text for everything below. A stack file changes project code (build
+file, config, a test, a reformat): show the user the list of those changes
+and apply them only after a yes **[USER]**. Without a yes, apply the factory
+part only and say what the gate will lack.
 
 - **`factory/checks.sh`**: replace the placeholder with the project's real
   checks: install dependencies if a fresh worktree needs them, then lint,
@@ -96,8 +90,9 @@ exact text for everything below.
   (`gh api repos/{owner}/{repo} --jq '{allow_merge_commit, allow_squash_merge, allow_rebase_merge}'`);
   `protected_paths`: keep the two factory entries, add the migrations folder if
   the project has one (new files pass the gate, edits to merged ones don't),
-  never add the project's tests; `ports.base`: move it if 5100–5199 is in use;
-  a backend with no screens: drop `"ui": "haiku"` from `surface_reviewers.ui`.
+  never add the project's tests; `ports.base`: move it if 5100–5199 is in use
+  (`lsof -nP -iTCP:5100-5199 -sTCP:LISTEN` prints nothing when free); no web
+  UI (a CLI doesn't count as one): drop `"ui": "haiku"` from `surface_reviewers.ui`.
   Leave `concurrency`, `max_rounds`, `routing` and prices as they are.
 - **Agents**: every `<!-- ADAPT: ... -->` comment in `.claude/agents/` must be
   replaced by project-specific text (what it asks for), or deleted when it
@@ -117,21 +112,24 @@ exact text for everything below.
 - **Labels**:
 
   ```bash
-  gh label create factory --color 5319E7 --description "Build this with the software factory"
-  gh label create factory:needs-info --color FBCA04 --description "The factory asked the author a question"
-  gh label create factory:needs-human --color D93F0B --description "The factory needs a human decision on the PR"
-  gh label create factory:blocked --color C5DEF5 --description "Waits for its blocking issues; factory/bin/unblock queues it when they are done"
+  gh label create factory --force --color 5319E7 --description "Build this with the software factory"
+  gh label create factory:needs-info --force --color FBCA04 --description "The factory asked the author a question"
+  gh label create factory:needs-human --force --color D93F0B --description "The factory needs a human decision on the PR"
+  gh label create factory:blocked --force --color C5DEF5 --description "Waits for its blocking issues; factory/bin/unblock queues it when they are done"
   for l in needs-triage needs-info ready-for-human wontfix; do gh label create "$l" 2>/dev/null || true; done
   ```
 
 ## 3. Install the tools
 
 Each tool's files live outside the repo (per machine). Skip a download that's
-already there with the same version.
+already there with the same version: CodeGraph's binary prints it with
+`--version` (and its checksum still matches), LLM Wiki's is in
+`~/.llmwiki/VERSION`, TokenEconomizer's is `git -C ~/.local/share/TokenEconomizer describe --tags`.
 
 **Language server (if one exists for the stack).** Claude Code's official LSP
 plugins: `jdtls-lsp` (Java), `typescript-lsp`, `pyright-lsp`, `gopls-lsp`,
-`rust-analyzer-lsp`, and others. Install the binary its README names, then
+`rust-analyzer-lsp`, and others. Install its language server (the stack file
+says how, or `claude plugin details <name>@claude-plugins-official`), then
 `claude plugin install <name>@claude-plugins-official --scope project`.
 The agents already list the `LSP` tool; it is simply absent without a plugin.
 
@@ -149,14 +147,14 @@ the `## Agent skills` block.
 
 **CodeGraph** (v0.21.0). Don't use the npm wrapper `@astudioplus/codegraph-mcp`:
 it sends telemetry to PostHog by default. Use the release binary and check its
-checksum. Pick the asset for this machine (`darwin-arm64`, `darwin-x64`,
-`linux-x64`, `linux-arm64`):
+checksum:
 
 ```bash
-A=codegraph-server-darwin-arm64
-mkdir -p ~/.codegraph/bin && cd ~/.codegraph/bin
-gh release download v0.21.0 -R codegraph-ai/CodeGraph -p "$A*" --clobber
-[ "$(shasum -a 256 $A | cut -d' ' -f1)" = "$(cut -d' ' -f1 $A.sha256)" ] && chmod +x $A
+OS=$(uname -s | tr A-Z a-z); ARCH=$(uname -m); [ "$ARCH" = x86_64 ] && ARCH=x64; [ "$ARCH" = aarch64 ] && ARCH=arm64
+A=codegraph-server-$OS-$ARCH; echo "$A"
+mkdir -p ~/.codegraph/bin
+( cd ~/.codegraph/bin && gh release download v0.21.0 -R codegraph-ai/CodeGraph -p "$A*" --clobber &&
+  [ "$(shasum -a 256 $A | cut -d' ' -f1)" = "$(cut -d' ' -f1 $A.sha256)" ] && chmod +x $A && echo OK )
 ```
 
 Stop if the checksums differ. Never strip macOS quarantine attributes
@@ -166,11 +164,11 @@ Stop if the checksums differ. Never strip macOS quarantine attributes
 
 ```bash
 C=32da49bf97743431a8cb3ff46e0e31c7fc629b18
-mkdir -p ~/.llmwiki && cd ~/.llmwiki
-curl -fsSL "https://raw.githubusercontent.com/microsoft/llmwiki/$C/plugin/server/llmwiki-mcp.cjs" -o llmwiki-mcp.cjs
-curl -fsSL "https://raw.githubusercontent.com/microsoft/llmwiki/$C/LICENSE" -o LICENSE
-echo $C > VERSION
-shasum -a 256 llmwiki-mcp.cjs   # expect 8f48e94c9177260a1f6802eebc7065bd32b3eac1e18d95e15bde565e0f9bbfa3
+mkdir -p ~/.llmwiki
+( cd ~/.llmwiki &&
+  curl -fsSL "https://raw.githubusercontent.com/microsoft/llmwiki/$C/plugin/server/llmwiki-mcp.cjs" -o llmwiki-mcp.cjs &&
+  curl -fsSL "https://raw.githubusercontent.com/microsoft/llmwiki/$C/LICENSE" -o LICENSE &&
+  echo $C > VERSION && shasum -a 256 llmwiki-mcp.cjs )   # expect 8f48e94c9177260a1f6802eebc7065bd32b3eac1e18d95e15bde565e0f9bbfa3
 ```
 
 Then, in the project root, create the wiki. With `.wiki` as its argument the
@@ -182,7 +180,7 @@ printf '%s\n' \
  '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"setup","version":"1"}}}' \
  '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
  "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"wiki_init\",\"arguments\":{\"path\":\"$PWD\"}}}" \
- | (node ~/.llmwiki/llmwiki-mcp.cjs & P=$!; sleep 5; kill $P)
+ | (node ~/.llmwiki/llmwiki-mcp.cjs & P=$!; sleep 5; kill $P 2>/dev/null || true)
 for d in entities concepts sources; do touch .wiki/wiki/$d/.gitkeep; done
 for s in wiki-ask wiki-research wiki-ingest wiki-save wiki-fix; do
   mkdir -p .claude/skills/$s
@@ -191,11 +189,14 @@ for s in wiki-ask wiki-research wiki-ingest wiki-save wiki-fix; do
 done
 ```
 
-Don't put a `.gitkeep` in `.wiki/raw/`: it would count as a source. `.wiki/`
-is committed.
+`wiki_init` also writes `.wiki/AGENTS.md`: the wiki's own schema, which the
+server sends the model; keep it. Don't put a `.gitkeep` in `.wiki/raw/`: it
+would count as a source, so a fresh clone has no `raw/` folder until someone
+creates it (`mkdir -p .wiki/raw`) to add a source. `.wiki/` is committed.
 
 **`.mcp.json`** in the project root (use the CodeGraph asset name from above;
-add an `--exclude` for any other large generated folder):
+add an `--exclude` for build output and other large generated folders, such as
+`build`, `.gradle`, `node_modules`, `dist`, `target`):
 
 ```json
 {
@@ -223,15 +224,16 @@ claude plugin marketplace add DietrichGebert/ponytail --scope project
 claude plugin install ponytail@ponytail --scope project
 ```
 
-Leave its `webhookUrl` empty (its metrics stay in `~/.config/ponytail/band/`).
+Leave `webhookUrl` empty (its metrics stay in `~/.config/ponytail/band/`); its
+other options can stay unset, which keeps their defaults. Don't run
+`/plugin configure` for it.
 
 **TokenEconomizer** (v0.1.0; runs from its clone):
 
 ```bash
-mkdir -p ~/.local/share && cd ~/.local/share
-[ -d TokenEconomizer ] || git clone --branch v0.1.0 --depth 1 https://github.com/microsoft/TokenEconomizer.git
+mkdir -p ~/.local/share
+[ -d ~/.local/share/TokenEconomizer ] || git clone --branch v0.1.0 --depth 1 https://github.com/microsoft/TokenEconomizer.git ~/.local/share/TokenEconomizer
 claude plugin marketplace add "$HOME/.local/share/TokenEconomizer" --scope user
-cd <project root>
 claude plugin install tokeneconomizer@tokeneconomizer --scope project
 TE="$HOME/.local/share/TokenEconomizer/plugin/scripts/te"
 $TE --host claude config set microskills=on toolprune=propose
@@ -241,7 +243,13 @@ $TE --host claude toolprune refresh-catalog
 **Never `toolprune=auto`**: it writes `permissions.deny` into
 `.claude/settings.local.json`, which applies to the factory's subagents too,
 and would remove CodeGraph, LLM Wiki, `LSP` and `Skill`: tools a chat session
-rarely uses but the agents need.
+rarely uses but the agents need. `microskills=on` makes a small model call
+every 3 sessions, billed to that session; `microskills=envfacts` learns
+without model calls, if the user prefers.
+
+Its marketplace is a local clone at user scope, so every other machine that
+opens this repo needs the clone and `marketplace add` above once (step 6
+tells the user).
 
 ## 4. `AGENTS.md`
 
@@ -332,13 +340,14 @@ too; exclude `.worktrees/` in its config.
    project is broken (don't fix project code without asking **[USER]**).
 2. `factory/bin/job queue` and `factory/bin/unblock --dry-run` run without an
    error.
-3. `grep -rn "ADAPT" .claude/agents` prints nothing. Each agent's frontmatter
-   has only `name`, `description`, `tools`, `model` (and `hooks` on the
-   builder).
+3. `grep -rn "ADAPT" .claude/agents` prints nothing, and
+   `for f in .claude/agents/*.md; do echo "$f: $(awk '/^---$/{n++; next} n==1 && /^[a-z]+:/{sub(":.*",""); printf "%s ", $0}' "$f")"; done`
+   prints only `name description tools model` (plus `hooks` on the builder).
 4. `python3 -m json.tool factory/config.json` and `.mcp.json` succeed.
 5. `git check-ignore factory/jobs/x .worktrees/x .claude/settings.local.json`
-   prints all three; `git check-ignore factory/bin/job` prints nothing; `git
-   status --porcelain --untracked-files=all` lists every copied file.
+   prints all three; `git check-ignore factory/bin/job` prints nothing; and
+   `git ls-files --others --exclude-standard factory/bin .claude/agents | wc -l`
+   prints 12 (before the commit).
 6. A headless check, from the project root (MCP servers and plugins load only
    in a new session):
 
@@ -349,13 +358,17 @@ too; exclude `.worktrees/` in its config.
 
    Both MCP calls answer, and the subagent reports `PONYTAIL MODE ACTIVE` and
    sees both skills.
-7. `"$HOME/.local/share/TokenEconomizer/plugin/scripts/te" --host claude status`
+7. The dev server starts from the AGENTS.md command on port `ports.base`
+   and answers there (`curl -s -o /dev/null -w '%{http_code}' localhost:<port>/<a path>`);
+   stop it by port (`kill $(lsof -tiTCP:<port> -sTCP:LISTEN)`). The gate never
+   starts it, but the builder and reviewers do. If it fails, report why.
+8. `"$HOME/.local/share/TokenEconomizer/plugin/scripts/te" --host claude status`
    runs, and `~/.tokeneconomizer/errors.log` is empty or absent.
 
 ## 6. Hand over
 
 Stay on the branch the user is on. Commit the install there with a one-line
-message and show the user the diff. **Ask before pushing [USER]**: the factory
+subject and show the user the diff. **Ask before pushing [USER]**: the factory
 branches every job from `origin/<base_branch>`, and the `factory-unblock`
 workflow runs only once it is on GitHub (on a private repo it uses a few
 seconds of Actions minutes per closed issue).
@@ -363,6 +376,8 @@ seconds of Actions minutes per closed issue).
 Then tell the user, in a few lines:
 
 - Restart Claude Code so the plugins and MCP servers load.
+- On another machine, install the per-machine tools from step 3 (CodeGraph,
+  LLM Wiki, the TokenEconomizer clone and marketplace, the LSP binary).
 - How to work: `factory-docs/01-workflow.md` (`/grill-with-docs` →
   `/to-spec` or `/to-tickets` → `/factory run`).
 - Every job ends as a PR. The approver merges what it approves; the rest wait
