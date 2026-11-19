@@ -7,7 +7,7 @@ report. Work in the project's root. Don't clone this repository.
 Files come from this kit at a fixed tag:
 
 ```
-KIT=https://raw.githubusercontent.com/Add0z/factory-kit/v1.0.1
+KIT=https://raw.githubusercontent.com/Add0z/factory-kit/v1.1.0
 ```
 
 Run every command from the project root; snippets that need another
@@ -49,7 +49,7 @@ Stop and tell the user if any of these fail:
 Copy these files from `$KIT/kit/` into the project, unchanged:
 
 ```bash
-KIT=https://raw.githubusercontent.com/Add0z/factory-kit/v1.0.1
+KIT=https://raw.githubusercontent.com/Add0z/factory-kit/v1.1.0
 for f in \
   .claude/skills/factory/SKILL.md \
   .claude/agents/intake.md .claude/agents/spec-writer.md .claude/agents/builder.md \
@@ -63,7 +63,10 @@ for f in \
   mkdir -p "$(dirname "$f")" && curl -fsSL "$KIT/kit/$f" -o "$f" || echo "FAILED: $f"
 done
 chmod +x factory/checks.sh factory/bin/*
+echo v1.1.0 > factory/KIT_VERSION
 ```
+
+`factory/KIT_VERSION` records the installed kit version; `UPDATE.md` reads it.
 
 If the project already has a `docs/adr/0001-*`, renumber the kit's ADR to the
 next free number and fix the reference to it in `AGENTS.md` (step 4).
@@ -88,7 +91,8 @@ part only and say what the gate will lack.
 - **`factory/config.json`**: `base_branch` = the default branch;
   `merge_method` one the repo allows
   (`gh api repos/{owner}/{repo} --jq '{allow_merge_commit, allow_squash_merge, allow_rebase_merge}'`);
-  `protected_paths`: keep the two factory entries, add the migrations folder if
+  `protected_paths`: keep the kit's entries (they stop a job from changing the
+  factory's own rules), add the migrations folder if
   the project has one (new files pass the gate, edits to merged ones don't),
   never add the project's tests; `ports.base`: move it if 5100–5199 is in use
   (`lsof -nP -iTCP:5100-5199 -sTCP:LISTEN` prints nothing when free); no web
@@ -385,3 +389,8 @@ Then tell the user, in a few lines:
 - Intake runs on Fable, once per issue; depending on the plan, Fable can bill
   to usage credits.
 - To start carefully, set `concurrency` to 1 in `factory/config.json`.
+- Changing the factory: generic rules (scripts, the skill, agent structure)
+  change in the kit and reach projects with
+  `Read https://raw.githubusercontent.com/Add0z/factory-kit/main/UPDATE.md and follow it.`;
+  project rules (the agents' project text, `checks.sh`, `protected_paths`)
+  change directly in the project, by a human: a factory job can't touch them.

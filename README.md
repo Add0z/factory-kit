@@ -25,12 +25,23 @@ intake → spec → build → gate → review → approve, with the tooling arou
 Open Claude Code in the root of your project and say:
 
 ```
-Read https://raw.githubusercontent.com/Add0z/factory-kit/v1.0.1/INSTALL.md and follow it.
+Read https://raw.githubusercontent.com/Add0z/factory-kit/v1.1.0/INSTALL.md and follow it.
 ```
 
 Requirements: a GitHub repo, `gh` logged in, Claude Code 2.1.290+, Python
 3.10+, Node 20+. Stack overlays in `stacks/` (Java/Spring so far) add
 stack-specific gates and agent text.
+
+## Update
+
+In a project that has `factory/KIT_VERSION`:
+
+```
+Read https://raw.githubusercontent.com/Add0z/factory-kit/main/UPDATE.md and follow it.
+```
+
+It applies only what changed in the kit since that version and keeps the
+project's own text. Changes per version: `CHANGELOG.md`.
 
 ## Use
 

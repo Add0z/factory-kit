@@ -31,7 +31,12 @@
   },
   "protected_paths": [
     "factory/checks.sh",
-    "factory/config.json"
+    "factory/config.json",
+    "factory/bin/*",
+    "factory/KIT_VERSION",
+    ".claude/agents/*",
+    ".claude/skills/factory/*",
+    ".github/workflows/factory-unblock.yml"
   ],
   "ports": {
     "base": 5100,
